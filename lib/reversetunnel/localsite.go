@@ -136,6 +136,11 @@ func (s *localSite) DialAuthServer() (conn net.Conn, err error) {
 }
 
 func (s *localSite) Dial(params DialParams) (net.Conn, error) {
+	err := params.CheckAndSetDefaults()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	clusterConfig, err := s.accessPoint.GetClusterConfig()
 	if err != nil {
 		return nil, trace.Wrap(err)

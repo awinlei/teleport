@@ -563,6 +563,11 @@ func (s *remoteSite) DialAuthServer() (conn net.Conn, err error) {
 // located in a remote connected site, the connection goes through the
 // reverse proxy tunnel.
 func (s *remoteSite) Dial(params DialParams) (net.Conn, error) {
+	err := params.CheckAndSetDefaults()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	clusterConfig, err := s.localAccessPoint.GetClusterConfig()
 	if err != nil {
 		return nil, trace.Wrap(err)
