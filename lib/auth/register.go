@@ -18,7 +18,6 @@ package auth
 
 import (
 	"crypto/x509"
-	"fmt"
 	"io/ioutil"
 	"strings"
 

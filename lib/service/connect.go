@@ -477,7 +477,11 @@ func (process *TeleportProcess) rotate(conn *Connector, localState auth.StateV2,
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	additionalPrincipals = utils.ReplaceInSlice(additionalPrincipals)
+	additionalPrincipals = utils.ReplaceInSlice(
+		additionalPrincipals,
+		defaults.AnyAddress,
+		defaults.Localhost,
+	)
 
 	principalsChanged := len(additionalPrincipals) != 0 && !conn.ServerIdentity.HasPrincipals(additionalPrincipals)
 

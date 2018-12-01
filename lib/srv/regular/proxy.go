@@ -297,18 +297,20 @@ func (t *proxySubsys) proxyToHost(
 		t.log.Warnf("server lookup failed: using default=%v", serverAddr)
 	}
 
-	// Construct a utils.NetAddr with the resolved IP in it. Store the raw
-	// address in the utils.NetAddr (used by the forwarding proxy to generate a
-	// host certificate with the correct hostname).
-	toAddr := &utils.NetAddr{
-		Addr:        serverAddr,
-		AddrNetwork: "tcp",
-		Raw:         net.JoinHostPort(t.host, t.port),
-	}
-
 	// Pass the agent along to the site. If the proxy is in recording mode, this
-	// agent is used to perform user authentication.
-	conn, err := site.Dial(remoteAddr, toAddr, t.agent)
+	// agent is used to perform user authentication. Pass the DNS address to the
+	// dialer so the forwarding proxy to generate a host certificate with the
+	// correct hostname).
+	toAddr := &utils.NetAddr{
+		AddrNetwork: "tcp",
+		Addr:        serverAddr,
+	}
+	conn, err := site.Dial(reversetunnel.DialParams{
+		From:      remoteAddr,
+		To:        toAddr,
+		UserAgent: t.agent,
+		Address:   net.JoinHostPort(t.host, t.port),
+	})
 	if err != nil {
 		return trace.Wrap(err)
 	}

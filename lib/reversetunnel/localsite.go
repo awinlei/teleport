@@ -22,14 +22,11 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/ssh/agent"
-
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv/forward"
-	"github.com/gravitational/teleport/lib/utils"
 	"github.com/gravitational/teleport/lib/utils/proxy"
 
 	"github.com/gravitational/trace"
@@ -138,7 +135,7 @@ func (s *localSite) DialAuthServer() (conn net.Conn, err error) {
 	return nil, trace.ConnectionProblem(err, "unable to connect to auth server")
 }
 
-func (s *localSite) Dial(from net.Addr, to net.Addr, userAgent agent.Agent) (net.Conn, error) {
+func (s *localSite) Dial(params DialParams) (net.Conn, error) {
 	clusterConfig, err := s.accessPoint.GetClusterConfig()
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -147,13 +144,13 @@ func (s *localSite) Dial(from net.Addr, to net.Addr, userAgent agent.Agent) (net
 	// if the proxy is in recording mode use the agent to dial and build a
 	// in-memory forwarding server
 	if clusterConfig.GetSessionRecording() == services.RecordAtProxy {
-		if userAgent == nil {
+		if params.UserAgent == nil {
 			return nil, trace.BadParameter("user agent missing")
 		}
-		return s.dialWithAgent(from, to, userAgent)
+		return s.dialWithAgent(params)
 	}
 
-	return s.DialTCP(from, to)
+	return s.DialTCP(params.From, params.To)
 }
 
 func (s *localSite) DialTCP(from net.Addr, to net.Addr) (net.Conn, error) {
@@ -163,32 +160,32 @@ func (s *localSite) DialTCP(from net.Addr, to net.Addr) (net.Conn, error) {
 	return dialer.DialTimeout(to.Network(), to.String(), defaults.DefaultDialTimeout)
 }
 
-func (s *localSite) dialWithAgent(from net.Addr, to net.Addr, userAgent agent.Agent) (net.Conn, error) {
-	s.log.Debugf("Dialing with an agent from %v to %v.", from, to)
+func (s *localSite) dialWithAgent(params DialParams) (net.Conn, error) {
+	s.log.Debugf("Dialing with an agent from %v to %v.", params.From, params.To)
 
-	addr := to.String()
-	principals := []string{to.String()}
+	host, _, err := net.SplitHostPort(params.To.String())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 
-	// Check to see if a raw address was packed into the net.Addr and if so,
-	// add it to the list of principals.
-	if toAddr, ok := to.(*utils.NetAddr); ok {
-		host, _, err := net.SplitHostPort(toAddr.Raw)
+	principals := []string{host}
+	if params.Address != "" {
+		host, _, err = net.SplitHostPort(params.Address)
 		if err != nil {
-			s.log.Debugf("Unable to parse raw address '%v': %v.", toAddr.Raw, err)
+			s.log.Debugf("Unable to parse Address '%v': %v.", params.Address, err)
 		} else {
-			addr = host
 			principals = append(principals, host)
 		}
 	}
 
 	// Get a host certificate for the forwarding node from the cache.
-	hostCertificate, err := s.certificateCache.GetHostCertificate(addr, principals)
+	hostCertificate, err := s.certificateCache.GetHostCertificate(params.To.String(), principals)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
 	// get a net.Conn to the target server
-	targetConn, err := net.DialTimeout(to.Network(), to.String(), defaults.DefaultDialTimeout)
+	targetConn, err := net.DialTimeout(params.To.Network(), params.To.String(), defaults.DefaultDialTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -198,10 +195,10 @@ func (s *localSite) dialWithAgent(from net.Addr, to net.Addr, userAgent agent.Ag
 	// once conn is closed.
 	serverConfig := forward.ServerConfig{
 		AuthClient:      s.client,
-		UserAgent:       userAgent,
+		UserAgent:       params.UserAgent,
 		TargetConn:      targetConn,
-		SrcAddr:         from,
-		DstAddr:         to,
+		SrcAddr:         params.From,
+		DstAddr:         params.To,
 		HostCertificate: hostCertificate,
 		Ciphers:         s.srv.Config.Ciphers,
 		KEXAlgorithms:   s.srv.Config.KEXAlgorithms,
